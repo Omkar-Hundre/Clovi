@@ -22,6 +22,8 @@ overlay_config.json
 .idea/
 .gemini/
 .system_generated/
+.netlify/
+*/.netlify/
 *.swp
 *.swo
 
