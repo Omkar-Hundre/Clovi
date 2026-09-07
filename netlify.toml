@@ -1,5 +1,5 @@
 [build]
-  publish = "landing"
+  publish = "docs"
   functions = "netlify/functions"
 
 [[headers]]
