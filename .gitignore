@@ -5,6 +5,9 @@ node_modules/
 dist/
 release/
 build/
+bin-release/
+release-build/
+build-temp-app/
 *.exe
 *.zip
 *.7z

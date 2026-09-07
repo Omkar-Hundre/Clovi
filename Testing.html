@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en" class="h-full">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Proctored Python Assessment Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <style>
+        .no-select {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #09090b;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #27272a;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3f3f46;
+        }
+
+        /* Security Dynamic Watermark */
+        .watermark-grid {
+            background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+    </style>
+</head>
+
+<body class="h-full bg-zinc-950 text-zinc-100 font-sans antialiased overflow-hidden flex flex-col no-select watermark-grid relative">
+
+    <!-- Security Background Watermark to Deter External Camera Capture -->
+    <div class="pointer-events-none fixed inset-0 z-0 flex items-center justify-center opacity-5 select-none rotate-[-25deg]">
+        <p id="security-watermark-text" class="text-4xl md:text-6xl font-black font-mono tracking-widest text-zinc-100">
+            CANDIDATE-PROCTOR-SECURE-SESSION
+        </p>
+    </div>
+
+    <!-- Top Navigation / Proctor Status Bar -->
+    <header class="relative z-10 h-14 border-b border-zinc-800 bg-zinc-900/90 px-4 flex items-center justify-between gap-4 flex-shrink-0 backdrop-blur-md">
+        <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2">
+                <span class="relative flex h-3 w-3">
+                    <span id="status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 hidden"></span>
+                    <span id="status-dot" class="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+                </span>
+                <span id="proctor-status" class="text-xs font-bold uppercase tracking-wider text-amber-400">Session Inactive</span>
+            </div>
+            <span class="text-zinc-700">|</span>
+            <h1 class="text-sm font-semibold text-zinc-200 flex items-center gap-2">
+                <span>Python Certification Exam</span>
+                <span class="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded border border-zinc-700 font-mono">PROCTOR-v2.4</span>
+            </h1>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <!-- Timer -->
+            <div class="flex items-center gap-2 bg-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-800 text-xs font-mono text-zinc-300 shadow-inner">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span id="timer-display" class="font-bold">45:00</span>
+            </div>
+
+            <!-- Violations Counter -->
+            <div id="violation-badge" class="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-400 transition-colors">
+                <span>Violations:</span>
+                <span id="violation-count" class="font-bold text-zinc-200">0</span>
+            </div>
+
+            <!-- Action Buttons -->
+            <button id="btn-fullscreen" class="rounded-lg border border-zinc-700 bg-zinc-800/80 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-zinc-700 hover:text-white transition">
+                Toggle Fullscreen
+            </button>
+            
+            <button id="btn-start-session" class="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-lg shadow-emerald-900/40 hover:bg-emerald-500 transition">
+                Start Session
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Assessment Layout -->
+    <div class="relative z-10 flex-1 flex overflow-hidden">
+        
+        <!-- Left Column: Problem Description & Security Audit Logs -->
+        <section class="w-1/2 flex flex-col border-r border-zinc-800 bg-zinc-950/60 backdrop-blur-sm">
+            <!-- Navigation Tabs -->
+            <div class="flex border-b border-zinc-800 bg-zinc-900/50 px-3 text-xs font-medium">
+                <button id="tab-btn-problem" class="px-4 py-3 border-b-2 border-emerald-500 text-emerald-400 font-semibold transition">
+                    Problem Statement
+                </button>
+                <button id="tab-btn-logs" class="px-4 py-3 border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition flex items-center gap-1.5">
+                    <span>Proctor Security Audit</span>
+                    <span id="log-count" class="bg-zinc-800 text-zinc-300 text-[10px] px-1.5 py-0.5 rounded-full border border-zinc-700">0</span>
+                </button>
+            </div>
+
+            <!-- Tab Content: Problem Description -->
+            <div id="tab-problem" class="flex-1 overflow-y-auto p-6 space-y-6">
+                <div>
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-xl font-bold text-zinc-100">1. Two Sum (Python 3)</h2>
+                        <span class="rounded bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 border border-emerald-500/20">Easy</span>
+                    </div>
+                    <p class="mt-3 text-sm text-zinc-300 leading-relaxed">
+                        Given an array of integers <code class="bg-zinc-800 px-1.5 py-0.5 rounded text-amber-300 font-mono text-xs">nums</code> and an integer <code class="bg-zinc-800 px-1.5 py-0.5 rounded text-amber-300 font-mono text-xs">target</code>, return indices of the two numbers such that they add up to <code class="bg-zinc-800 px-1.5 py-0.5 rounded text-amber-300 font-mono text-xs">target</code>.
+                    </p>
+                    <p class="mt-2 text-sm text-zinc-400 leading-relaxed">
+                        You may assume that each input would have <strong>exactly one solution</strong>, and you may not use the same element twice. You can return the answer in any order.
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <h3 class="text-xs uppercase tracking-wider font-semibold text-zinc-500">Examples</h3>
+                    
+                    <!-- Example 1 -->
+                    <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-2 text-xs font-mono">
+                        <div><span class="text-zinc-500">Input:</span> <span class="text-zinc-200">nums = [2, 7, 11, 15], target = 9</span></div>
+                        <div><span class="text-zinc-500">Output:</span> <span class="text-emerald-400 font-bold">[0, 1]</span></div>
+                        <div><span class="text-zinc-500">Explanation:</span> <span class="text-zinc-400">Because nums[0] + nums[1] == 9, we return [0, 1].</span></div>
+                    </div>
+
+                    <!-- Example 2 -->
+                    <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-2 text-xs font-mono">
+                        <div><span class="text-zinc-500">Input:</span> <span class="text-zinc-200">nums = [3, 2, 4], target = 6</span></div>
+                        <div><span class="text-zinc-500">Output:</span> <span class="text-emerald-400 font-bold">[1, 2]</span></div>
+                    </div>
+
+                    <!-- Example 3 -->
+                    <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-2 text-xs font-mono">
+                        <div><span class="text-zinc-500">Input:</span> <span class="text-zinc-200">nums = [3, 3], target = 6</span></div>
+                        <div><span class="text-emerald-400 font-bold">[0, 1]</span></div>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <h3 class="text-xs uppercase tracking-wider font-semibold text-zinc-500">Constraints</h3>
+                    <ul class="list-disc list-inside text-xs text-zinc-400 space-y-1 font-mono">
+                        <li>2 &lt;= nums.length &lt;= 10<sup>4</sup></li>
+                        <li>-10<sup>9</sup> &lt;= nums[i] &lt;= 10<sup>9</sup></li>
+                        <li>-10<sup>9</sup> &lt;= target &lt;= 10<sup>9</sup></li>
+                        <li>Only one valid answer exists.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Tab Content: Proctor Logs -->
+            <div id="tab-logs" class="hidden flex-1 flex flex-col p-4 overflow-hidden">
+                <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+                    <span class="text-xs text-zinc-400 font-medium">Live Anti-Cheat Violation Feed</span>
+                    <button id="btn-clear-log" class="text-xs text-zinc-500 hover:text-zinc-300 transition">Clear Logs</button>
+                </div>
+                <ul id="log-list" class="flex-1 overflow-y-auto mt-3 space-y-2 pr-1 text-xs font-mono">
+                    <li class="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-zinc-500">
+                        Proctor engine ready. Click "Start Session" to activate fullscreen lock & active security monitoring.
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Right Column: Python Code Editor & Test Output -->
+        <section class="w-1/2 flex flex-col bg-zinc-950">
+            <!-- Code Editor Header -->
+            <div class="h-10 border-b border-zinc-800 bg-zinc-900/50 px-4 flex items-center justify-between text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="font-medium text-zinc-300">Environment: Python 3.11</span>
+                    <span id="python-runtime-badge" class="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-400 border border-sky-500/20">
+                        Loading Pyodide Runtime...
+                    </span>
+                </div>
+                <span class="text-zinc-500 text-[11px]">Sandboxed WebAssembly Engine</span>
+            </div>
+
+            <!-- Code Editor Box -->
+            <div class="flex-1 relative flex bg-zinc-950 font-mono text-sm">
+                <!-- Line Numbers -->
+                <div class="w-12 bg-zinc-950 text-zinc-700 select-none py-3 text-right pr-3 border-r border-zinc-900 leading-6 text-xs" id="line-numbers">
+                    1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12
+                </div>
+                <!-- Textarea Editor -->
+                <textarea id="code-editor" class="flex-1 bg-zinc-950 text-zinc-100 p-3 leading-6 outline-none resize-none border-none focus:ring-0 font-mono text-xs selection:bg-sky-900/60" spellcheck="false">def two_sum(nums, target):
+    """
+    :type nums: List[int]
+    :type target: int
+    :rtype: List[int]
+    """
+    seen = {}
+    for i, num in enumerate(nums):
+        diff = target - num
+        if diff in seen:
+            return [seen[diff], i]
+        seen[num] = i
+    return []
+</textarea>
+            </div>
+
+            <!-- Control Bar for Execution -->
+            <div class="h-12 border-t border-zinc-800 bg-zinc-900/60 px-4 flex items-center justify-between">
+                <div class="text-xs text-zinc-400 flex items-center gap-2" id="execution-status">
+                    <span>Ready for evaluation</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="btn-run-code" class="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-700 hover:text-white transition flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/>
+                        </svg>
+                        Run Code
+                    </button>
+                    <button id="btn-submit-code" class="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-lg hover:bg-emerald-500 transition">
+                        Submit Solution
+                    </button>
+                </div>
+            </div>
+
+            <!-- Console Output & Test Results -->
+            <div class="h-48 border-t border-zinc-800 bg-zinc-950 flex flex-col">
+                <div class="h-8 border-b border-zinc-900 bg-zinc-900/30 px-4 flex items-center justify-between text-[11px] text-zinc-400">
+                    <span class="font-semibold uppercase tracking-wider text-zinc-400">Test Execution Output</span>
+                    <span id="test-summary" class="text-zinc-500">Not executed</span>
+                </div>
+                <div id="console-output" class="flex-1 p-3 font-mono text-xs overflow-y-auto space-y-2 text-zinc-300">
+                    <div class="text-zinc-500 italic">Click "Run Code" to test your Python solution against test cases...</div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Start Exam Overlay Modal -->
+    <div id="modal-start" class="fixed inset-0 z-50 bg-zinc-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-5">
+            <div class="text-center space-y-2">
+                <div class="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 mx-auto flex items-center justify-center text-emerald-400 shadow-inner">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-zinc-100">Proctored Assessment Mode</h3>
+                <p class="text-xs text-zinc-400 leading-relaxed">
+                    This certification test is monitored online. Once you click start, full screen mode will be enforced, and anti-cheat tracking will begin.
+                </p>
+            </div>
+
+            <div class="rounded-xl border border-zinc-800 bg-zinc-950 p-4 space-y-2.5 text-xs text-zinc-300">
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    <span>Automatic Fullscreen Lock & Window Focus Tracker</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    <span>Copy, Cut & DevTools Interception</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    <span>Browser-Native Python 3.11 Execution Engine</span>
+                </div>
+            </div>
+
+            <button id="btn-modal-start" class="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/50 hover:bg-emerald-500 transition">
+                Enter Fullscreen & Begin Test
+            </button>
+        </div>
+    </div>
+
+    <!-- Security Violation Toast Banner -->
+    <div id="security-alert" class="hidden fixed top-16 left-1/2 transform -translate-x-1/2 z-50 max-w-lg w-full bg-red-950 border border-red-500/50 rounded-xl p-4 shadow-2xl flex items-center justify-between gap-3 text-red-200 animate-bounce">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-red-900/50 flex items-center justify-center text-red-400 flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </div>
+            <div>
+                <div class="font-bold text-xs uppercase tracking-wider text-red-400">Proctor Security Alert</div>
+                <div id="alert-message" class="text-xs mt-0.5 text-red-200">Violation detected!</div>
+            </div>
+        </div>
+        <button id="alert-dismiss" class="text-xs bg-red-900/60 hover:bg-red-900 px-3 py-1 rounded border border-red-700/50 transition">
+            Acknowledge
+        </button>
+    </div>
+
+    <!-- Fullscreen Exit Warning Modal Enforcer -->
+    <div id="modal-fullscreen-enforcer" class="hidden fixed inset-0 z-50 bg-red-950/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="max-w-md w-full bg-zinc-900 border border-red-600/60 rounded-2xl p-6 shadow-2xl text-center space-y-5">
+            <div class="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/30 mx-auto flex items-center justify-center text-red-500">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+            </div>
+            <div class="space-y-2">
+                <h3 class="text-lg font-bold text-zinc-100">FULLSCREEN MODE EXITED</h3>
+                <p class="text-xs text-zinc-400 leading-relaxed">
+                    Exiting fullscreen mode is flagged as a security violation. You must re-enter fullscreen immediately to continue your exam.
+                </p>
+            </div>
+            <button id="btn-re-fullscreen" class="w-full rounded-xl bg-red-600 py-3 text-sm font-semibold text-white shadow-lg shadow-red-900/50 hover:bg-red-500 transition">
+                Return to Fullscreen Now
+            </button>
+        </div>
+    </div>
+
+    <!-- Application Script Logic -->
+    <script>
+        // DOM Helper
+        const $ = (id) => document.getElementById(id);
+
+        // Session State
+        const state = {
+            sessionActive: false,
+            violations: 0,
+            logCount: 0,
+            timerSeconds: 45 * 60,
+            timerInterval: null,
+            pyodideReady: false,
+            pyodideInstance: null,
+            devtoolsOpen: false
+        };
+
+        // Test Cases for Two Sum Problem
+        const testCases = [
+            { nums: [2, 7, 11, 15], target: 9, expected: [0, 1] },
+            { nums: [3, 2, 4], target: 6, expected: [1, 2] },
+            { nums: [3, 3], target: 6, expected: [0, 1] }
+        ];
+
+        // Init Pyodide Engine
+        async function initPyodide() {
+            try {
+                if (window.loadPyodide) {
+                    state.pyodideInstance = await loadPyodide();
+                    state.pyodideReady = true;
+                    $("python-runtime-badge").textContent = "Pyodide WASM Ready";
+                    $("python-runtime-badge").className = "rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400 border border-emerald-500/20";
+                }
+            } catch (err) {
+                console.warn("Pyodide CDN fallback:", err);
+                state.pyodideReady = false;
+                $("python-runtime-badge").textContent = "JS Interpreter (Fallback)";
+                $("python-runtime-badge").className = "rounded bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-400 border border-amber-500/20";
+            }
+        }
+        initPyodide();
+
+        // Security Violation Logging
+        function logSecurityEvent(type, message, isViolation = true) {
+            state.logCount++;
+            $("log-count").textContent = String(state.logCount);
+
+            const li = document.createElement("li");
+            li.className = "rounded-lg border border-zinc-800 bg-zinc-900/60 p-2.5 flex items-start justify-between gap-2";
+
+            const left = document.createElement("div");
+            left.className = "space-y-0.5";
+
+            const badge = document.createElement("span");
+            badge.className = `inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                isViolation ? "bg-red-500/20 text-red-400 border border-red-500/30" : "bg-sky-500/20 text-sky-400"
+            }`;
+            badge.textContent = type;
+
+            const text = document.createElement("div");
+            text.className = "text-zinc-300";
+            text.textContent = message;
+
+            left.append(badge, text);
+
+            const time = document.createElement("span");
+            time.className = "text-[10px] text-zinc-500 font-mono flex-shrink-0";
+            time.textContent = new Date().toLocaleTimeString();
+
+            li.append(left, time);
+            $("log-list").prepend(li);
+
+            // Increment violations ONLY when active session & actual violation
+            if (isViolation && state.sessionActive) {
+                state.violations++;
+                $("violation-count").textContent = String(state.violations);
+                $("violation-badge").className = "flex items-center gap-1.5 bg-red-950/40 border border-red-900/50 px-3 py-1.5 rounded-lg text-xs font-medium text-red-300";
+                triggerSecurityAlert(`${type}: ${message}`);
+            }
+        }
+
+        // Show Toast Alert Banner
+        let alertTimer;
+        function triggerSecurityAlert(message) {
+            $("alert-message").textContent = message;
+            $("security-alert").classList.remove("hidden");
+            clearTimeout(alertTimer);
+            alertTimer = setTimeout(() => {
+                $("security-alert").classList.add("hidden");
+            }, 3500);
+        }
+        $("alert-dismiss").addEventListener("click", () => {
+            $("security-alert").classList.add("hidden");
+        });
+
+        // Start Exam Session Logic
+        async function startSession() {
+            if (state.sessionActive) return;
+
+            state.sessionActive = true;
+            $("modal-start").classList.add("hidden");
+            $("modal-fullscreen-enforcer").classList.add("hidden");
+
+            // Request Fullscreen
+            try {
+                if (!document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                }
+            } catch (err) {
+                logSecurityEvent("FULLSCREEN", "Fullscreen auto-request blocked by browser settings.", false);
+            }
+
+            // Update Header Status UI
+            $("proctor-status").textContent = "Monitoring Active";
+            $("proctor-status").className = "text-xs font-bold uppercase tracking-wider text-emerald-400";
+            $("status-dot").className = "relative inline-flex rounded-full h-3 w-3 bg-emerald-500";
+            $("status-ping").classList.remove("hidden");
+
+            $("btn-start-session").textContent = "Session Active";
+            $("btn-start-session").className = "rounded-lg bg-zinc-800 px-4 py-1.5 text-xs font-semibold text-zinc-400 cursor-default";
+
+            logSecurityEvent("SESSION_START", "Exam session initiated. Anti-cheat proctoring activated.", false);
+
+            // Start Exam Timer
+            clearInterval(state.timerInterval);
+            state.timerInterval = setInterval(() => {
+                if (state.timerSeconds > 0) {
+                    state.timerSeconds--;
+                    const mins = Math.floor(state.timerSeconds / 60).toString().padStart(2, '0');
+                    const secs = (state.timerSeconds % 60).toString().padStart(2, '0');
+                    $("timer-display").textContent = `${mins}:${secs}`;
+                } else {
+                    clearInterval(state.timerInterval);
+                    alert("Exam Time Expired!");
+                }
+            }, 1000);
+        }
+
+        $("btn-start-session").addEventListener("click", startSession);
+        $("btn-modal-start").addEventListener("click", startSession);
+
+        $("btn-re-fullscreen").addEventListener("click", async () => {
+            try {
+                await document.documentElement.requestFullscreen();
+                $("modal-fullscreen-enforcer").classList.add("hidden");
+            } catch (err) {
+                console.warn(err);
+            }
+        });
+
+        // ----------------------------------------------------
+        // ANTI-CHEAT VIOLATION HOOKS (Active ONLY when sessionActive is TRUE)
+        // Note: Regular clicking/focusing is NOT tracked as violations!
+        // ----------------------------------------------------
+
+        // 1. Fullscreen Change Enforcer
+        document.addEventListener("fullscreenchange", () => {
+            if (!document.fullscreenElement && state.sessionActive) {
+                logSecurityEvent("FULLSCREEN_EXIT", "Candidate exited full screen mode!");
+                $("modal-fullscreen-enforcer").classList.remove("hidden");
+            } else if (document.fullscreenElement) {
+                $("modal-fullscreen-enforcer").classList.add("hidden");
+            }
+        });
+
+        // 2. Tab Switch / Window Blur / Visibility Loss
+        window.addEventListener("blur", () => {
+            if (state.sessionActive) {
+                logSecurityEvent("TAB_SWITCH", "Window focus lost (switched tab or window).");
+            }
+        });
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "hidden" && state.sessionActive) {
+                logSecurityEvent("TAB_HIDDEN", "Page hidden (minimized or background tab).");
+            }
+        });
+
+        // 3. Cursor Leaving Viewport Frame
+        document.addEventListener("mouseleave", () => {
+            if (state.sessionActive) {
+                logSecurityEvent("MOUSE_LEAVE", "Cursor moved outside the exam viewport frame.");
+            }
+        });
+
+        // 4. Clipboard Interception (Copy / Cut / Paste)
+        document.addEventListener("copy", (e) => {
+            if (state.sessionActive) {
+                e.preventDefault();
+                logSecurityEvent("COPY_BLOCK", "Attempted COPY action blocked.");
+            }
+        });
+
+        document.addEventListener("cut", (e) => {
+            if (state.sessionActive) {
+                e.preventDefault();
+                logSecurityEvent("CUT_BLOCK", "Attempted CUT action blocked.");
+            }
+        });
+
+        document.addEventListener("paste", (e) => {
+            if (state.sessionActive) {
+                logSecurityEvent("PASTE_EVENT", "Paste event triggered in workspace.");
+            }
+        });
+
+        // 5. Context Menu Interception (Right-Click)
+        document.addEventListener("contextmenu", (e) => {
+            if (state.sessionActive) {
+                e.preventDefault();
+                logSecurityEvent("RIGHT_CLICK", "Right-click context menu attempt blocked.");
+            }
+        });
+
+        // 6. DevTools & Forbidden Keyboard Shortcuts (F12, Ctrl+Shift+I, etc.)
+        window.addEventListener("keydown", (e) => {
+            if (!state.sessionActive) return;
+
+            const key = e.key.toLowerCase();
+            const ctrlOrMeta = e.ctrlKey || e.metaKey;
+
+            if (e.key === "F12") {
+                e.preventDefault();
+                logSecurityEvent("DEVTOOLS", "F12 key press intercepted.");
+            }
+
+            if (ctrlOrMeta && e.shiftKey && ["i", "j", "c"].includes(key)) {
+                e.preventDefault();
+                logSecurityEvent("DEVTOOLS", `DevTools shortcut (Ctrl+Shift+${key.toUpperCase()}) blocked.`);
+            }
+
+            if (ctrlOrMeta && ["u", "s"].includes(key)) {
+                e.preventDefault();
+                logSecurityEvent("FORBIDDEN_KEY", `Shortcut Ctrl+${key.toUpperCase()} blocked.`);
+            }
+        });
+
+        // 7. DevTools Window Gap Heuristic
+        function checkDevToolsGap() {
+            if (!state.sessionActive) return;
+            const open = (window.outerWidth - window.innerWidth > 180) || (window.outerHeight - window.innerHeight > 180);
+            if (open && !state.devtoolsOpen) {
+                state.devtoolsOpen = true;
+                logSecurityEvent("DEVTOOLS_GAP", "Docked DevTools detected via window geometry mismatch.");
+            } else if (!open) {
+                state.devtoolsOpen = false;
+            }
+        }
+        window.addEventListener("resize", checkDevToolsGap);
+
+        // Fullscreen Toggle Manual Button
+        $("btn-fullscreen").addEventListener("click", async () => {
+            try {
+                if (document.fullscreenElement) {
+                    await document.exitFullscreen();
+                } else {
+                    await document.documentElement.requestFullscreen();
+                }
+            } catch (err) {
+                logSecurityEvent("FULLSCREEN", "Fullscreen toggle failed.", false);
+            }
+        });
+
+        // Navigation Tabs (Problem vs Logs)
+        $("tab-btn-problem").addEventListener("click", (e) => {
+            e.preventDefault();
+            $("tab-problem").classList.remove("hidden");
+            $("tab-logs").classList.add("hidden");
+            $("tab-btn-problem").className = "px-4 py-3 border-b-2 border-emerald-500 text-emerald-400 font-semibold transition";
+            $("tab-btn-logs").className = "px-4 py-3 border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition flex items-center gap-1.5";
+        });
+
+        $("tab-btn-logs").addEventListener("click", (e) => {
+            e.preventDefault();
+            $("tab-logs").classList.remove("hidden");
+            $("tab-problem").classList.add("hidden");
+            $("tab-btn-logs").className = "px-4 py-3 border-b-2 border-emerald-500 text-emerald-400 font-semibold transition flex items-center gap-1.5";
+            $("tab-btn-problem").className = "px-4 py-3 border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 transition";
+        });
+
+        $("btn-clear-log").addEventListener("click", () => {
+            $("log-list").innerHTML = "";
+            state.logCount = 0;
+            $("log-count").textContent = "0";
+        });
+
+        // Editor Line Numbers
+        const codeEditor = $("code-editor");
+        const lineNumbers = $("line-numbers");
+
+        function updateLineNumbers() {
+            const lines = codeEditor.value.split('\n').length;
+            lineNumbers.innerHTML = Array.from({ length: Math.max(lines, 12) }, (_, i) => i + 1).join('<br>');
+        }
+        codeEditor.addEventListener("input", updateLineNumbers);
+        updateLineNumbers();
+
+        // Python Runner Function
+        async function runTests() {
+            $("execution-status").textContent = "Evaluating solution...";
+            const userCode = codeEditor.value;
+            const consoleOutput = $("console-output");
+            consoleOutput.innerHTML = "";
+
+            let passed = 0;
+
+            for (let i = 0; i < testCases.length; i++) {
+                const tc = testCases[i];
+                const tcDiv = document.createElement("div");
+                tcDiv.className = "rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-1.5";
+
+                let resultVal;
+                let isSuccess = false;
+                let errorMsg = "";
+
+                if (state.pyodideReady && state.pyodideInstance) {
+                    try {
+                        const pyScript = `
+${userCode}
+
+import json
+res = two_sum(${JSON.stringify(tc.nums)}, ${tc.target})
+json.dumps(res)
+                        `;
+                        const rawRes = await state.pyodideInstance.runPythonAsync(pyScript);
+                        resultVal = JSON.parse(rawRes);
+                        isSuccess = Array.isArray(resultVal) && 
+                            resultVal.length === tc.expected.length && 
+                            resultVal.every((val, idx) => val === tc.expected[idx]);
+                    } catch (err) {
+                        errorMsg = err.toString();
+                        isSuccess = false;
+                    }
+                } else {
+                    // JavaScript Fallback Interpreter for Two Sum
+                    try {
+                        const jsEval = new Function("nums", "target", `
+                            ${userCode.replace(/def two_sum\(nums, target\):/g, 'function two_sum(nums, target) {')
+                                       .replace(/seen = {}/g, 'let seen = {};')
+                                       .replace(/for i, num in enumerate\(nums\):/g, 'for (let i = 0; i < nums.length; i++) { let num = nums[i];')
+                                       .replace(/diff = target - num/g, 'let diff = target - num;')
+                                       .replace(/if diff in seen:/g, 'if (diff in seen) {')
+                                       .replace(/return \[seen\[diff\], i\]/g, 'return [seen[diff], i]; }')
+                                       .replace(/seen\[num\] = i/g, 'seen[num] = i; }')
+                                       .replace(/return \[\]/g, 'return [];')}
+                            return two_sum(nums, target);
+                        `);
+                        resultVal = jsEval(tc.nums, tc.target);
+                        isSuccess = Array.isArray(resultVal) && 
+                            resultVal.length === tc.expected.length && 
+                            resultVal.every((val, idx) => val === tc.expected[idx]);
+                    } catch (err) {
+                        errorMsg = "Syntax Error: Ensure valid Python solution.";
+                        isSuccess = false;
+                    }
+                }
+
+                if (isSuccess) passed++;
+
+                tcDiv.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-[11px] ${isSuccess ? 'text-emerald-400' : 'text-red-400'}">
+                            Test Case ${i + 1}: ${isSuccess ? 'PASSED ✓' : 'FAILED ✗'}
+                        </span>
+                        <span class="text-[10px] text-zinc-500 font-mono">nums=${JSON.stringify(tc.nums)}, target=${tc.target}</span>
+                    </div>
+                    <div class="text-[11px] text-zinc-400">
+                        Expected: <code class="text-emerald-400 font-bold">${JSON.stringify(tc.expected)}</code> 
+                        | Actual: <code class="${isSuccess ? 'text-emerald-400' : 'text-red-400'} font-bold">${errorMsg ? errorMsg : JSON.stringify(resultVal)}</code>
+                    </div>
+                `;
+                consoleOutput.appendChild(tcDiv);
+            }
+
+            $("execution-status").textContent = "Execution completed.";
+            $("test-summary").textContent = `${passed}/${testCases.length} Passed`;
+            $("test-summary").className = passed === testCases.length ? "text-emerald-400 font-bold text-xs" : "text-amber-400 font-bold text-xs";
+        }
+
+        $("btn-run-code").addEventListener("click", runTests);
+        $("btn-submit-code").addEventListener("click", async () => {
+            await runTests();
+            logSecurityEvent("SUBMIT_SOLUTION", "Candidate submitted code solution for evaluation.", false);
+            alert("Solution submitted successfully!");
+        });
+    </script>
+</body>
+
+</html>

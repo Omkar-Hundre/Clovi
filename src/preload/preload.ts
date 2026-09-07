@@ -15,7 +15,19 @@ export interface AppConfig {
   privacyMode: boolean;
   opacity: number;
   apiKey?: string;
+  openaiApiKey?: string;
+  aiProvider?: 'gemini' | 'openai';
   model?: string;
+  clickThrough?: boolean;
+  hotCornerEnabled?: boolean;
+  hotCornerZone?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+  hotCornerDwellMs?: number;
+  autoWatchEnabled?: boolean;
+  autoWatchIntervalSec?: number;
+  clipboardAutoSolve?: boolean;
+  pillTheme?: 'dark' | 'light' | 'slate' | 'glass';
+  pillOpacity?: number;
+  pillCustomColor?: string;
 }
 
 const api = {
@@ -58,16 +70,67 @@ const api = {
     return () => ipcRenderer.removeListener('overlay:global-solve', handler);
   },
 
+  // Hands-free & Hot Corner Events
+  onHotCornerTriggered: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('overlay:hot-corner-triggered', handler);
+    return () => ipcRenderer.removeListener('overlay:hot-corner-triggered', handler);
+  },
+  onClickThroughToggled: (callback: (enabled: boolean) => void) => {
+    const handler = (_: any, enabled: boolean) => callback(enabled);
+    ipcRenderer.on('overlay:click-through-toggled', handler);
+    return () => ipcRenderer.removeListener('overlay:click-through-toggled', handler);
+  },
+
   // Focus & Ghost mode controls
   moveWindowBy: (dx: number, dy: number): Promise<void> => ipcRenderer.invoke('overlay:move-window-by', { dx, dy }),
   setFocusable: (enable: boolean): Promise<void> => ipcRenderer.invoke('overlay:set-focusable', enable),
   setGhostMode: (isGhost: boolean): Promise<void> => ipcRenderer.invoke('overlay:set-ghost-mode', isGhost),
+  toggleClickThrough: (): Promise<boolean> => ipcRenderer.invoke('overlay:toggle-click-through'),
+  setClickThrough: (enable: boolean): Promise<void> => ipcRenderer.invoke('overlay:set-click-through', enable),
   resizeStealth: (width: number, height: number, alignBottom?: boolean): Promise<void> =>
     ipcRenderer.invoke('overlay:resize-stealth', { width, height, alignBottom }),
   onToggleGhostMode: (callback: () => void) => {
     const handler = () => callback();
     ipcRenderer.on('overlay:toggle-ghost-mode', handler);
     return () => ipcRenderer.removeListener('overlay:toggle-ghost-mode', handler);
+  },
+  onOpenSettings: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('overlay:open-settings', handler);
+    return () => ipcRenderer.removeListener('overlay:open-settings', handler);
+  },
+  onOpenDocs: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('overlay:open-docs', handler);
+    return () => ipcRenderer.removeListener('overlay:open-docs', handler);
+  },
+  onToggleStealthPrompt: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('overlay:toggle-stealth-prompt', handler);
+    return () => ipcRenderer.removeListener('overlay:toggle-stealth-prompt', handler);
+  },
+
+  // Transparent Mode Virtual Mouse Listeners
+  onScrollWheel: (callback: (data: { deltaY: number; x: number; y: number }) => void) => {
+    const handler = (_: any, data: { deltaY: number; x: number; y: number }) => callback(data);
+    ipcRenderer.on('overlay:scroll-wheel', handler);
+    return () => ipcRenderer.removeListener('overlay:scroll-wheel', handler);
+  },
+  onDragScroll: (callback: (data: { deltaY: number }) => void) => {
+    const handler = (_: any, data: { deltaY: number }) => callback(data);
+    ipcRenderer.on('overlay:drag-scroll', handler);
+    return () => ipcRenderer.removeListener('overlay:drag-scroll', handler);
+  },
+  onVirtualClick: (callback: (data: { x: number; y: number }) => void) => {
+    const handler = (_: any, data: { x: number; y: number }) => callback(data);
+    ipcRenderer.on('overlay:virtual-click', handler);
+    return () => ipcRenderer.removeListener('overlay:virtual-click', handler);
+  },
+  onVirtualMiddleClick: (callback: (data: { x: number; y: number }) => void) => {
+    const handler = (_: any, data: { x: number; y: number }) => callback(data);
+    ipcRenderer.on('overlay:virtual-middle-click', handler);
+    return () => ipcRenderer.removeListener('overlay:virtual-middle-click', handler);
   },
 
   // Window management

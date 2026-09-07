@@ -11,6 +11,7 @@
     "dev": "npm run build && electron .",
     "build:encrypt": "electron scripts/compile-bytecode.js",
     "icon:generate": "electron scripts/generate-icon.js",
+    "build:exe": "npm run build && node scripts/build-dist.js",
     "dist": "npm run build && npm run build:encrypt && npm run icon:generate && electron-builder --win",
     "dist:portable": "npm run build && npm run build:encrypt && npm run icon:generate && electron-builder --win portable",
     "dist:dir": "npm run build && npm run build:encrypt && npm run icon:generate && electron-builder --win --dir",

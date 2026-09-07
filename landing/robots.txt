@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://clovi.netlify.app/sitemap.xml

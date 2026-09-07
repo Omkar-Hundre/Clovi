@@ -1,4 +1,4 @@
-﻿import { BrowserWindow, app } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -8,6 +8,7 @@ const WDA_MONITOR = 0x00000001;
 const WDA_EXCLUDEFROMCAPTURE = 0x00000011; // Excludes window completely from screen share / capture
 
 const GWL_EXSTYLE = -20;
+const WS_EX_TRANSPARENT = 0x00000020;
 const WS_EX_NOACTIVATE = 0x08000000;
 const WS_EX_TOPMOST = 0x00000008;
 
@@ -36,12 +37,113 @@ try {
   user32.GetWindowLongPtrW = user32.func('intptr_t __stdcall GetWindowLongPtrW(uintptr_t hWnd, int nIndex)');
   user32.SetWindowLongPtrW = user32.func('intptr_t __stdcall SetWindowLongPtrW(uintptr_t hWnd, int nIndex, intptr_t dwNewLong)');
   user32.SetWindowPos = user32.func('bool __stdcall SetWindowPos(uintptr_t hWnd, intptr_t hWndInsertAfter, int X, int Y, int cx, int cy, uint32_t uFlags)');
+  user32.GetAsyncKeyState = user32.func('int16_t __stdcall GetAsyncKeyState(int vKey)');
+
+  const POINT = koffi.struct('POINT', {
+    x: 'long',
+    y: 'long'
+  });
+
+  const MSLLHOOKSTRUCT = koffi.struct('MSLLHOOKSTRUCT', {
+    pt: POINT,
+    mouseData: 'uint32_t',
+    flags: 'uint32_t',
+    time: 'uint32_t',
+    dwExtraInfo: 'uintptr_t'
+  });
+
+  const LowLevelMouseProc = koffi.proto('intptr_t __stdcall LowLevelMouseProc(int nCode, uintptr_t wParam, MSLLHOOKSTRUCT *lParam)');
+  user32.SetWindowsHookExW = user32.func('uintptr_t __stdcall SetWindowsHookExW(int idHook, LowLevelMouseProc *lpfn, uintptr_t hmod, uint32_t dwThreadId)');
+  user32.CallNextHookEx = user32.func('intptr_t __stdcall CallNextHookEx(uintptr_t hhk, int nCode, uintptr_t wParam, MSLLHOOKSTRUCT *lParam)');
+  user32.UnhookWindowsHookEx = user32.func('bool __stdcall UnhookWindowsHookEx(uintptr_t hhk)');
+  user32._LowLevelMouseProc = LowLevelMouseProc;
+
   const EnumChildProc = koffi.proto('bool __stdcall EnumChildProc(uintptr_t hWnd, intptr_t lParam)');
   user32.EnumChildWindows = user32.func('bool __stdcall EnumChildWindows(uintptr_t hWndParent, EnumChildProc *lpEnumFunc, intptr_t lParam)');
   user32._EnumChildProc = EnumChildProc;
   user32._koffi = koffi;
 } catch (err) {
   console.warn('[WindowsOverlay] koffi native bridge error:', err);
+}
+
+let globalMouseHook: any = null;
+let globalMouseHookCallback: any = null;
+
+export function installGlobalMouseHook(onMouseEvent: (type: 'wheel' | 'lbuttondown' | 'lbuttonup' | 'rbuttondown' | 'mbuttondown', x: number, y: number, delta?: number) => void) {
+  if (!user32 || !user32.SetWindowsHookExW || !user32._koffi) return;
+  if (globalMouseHook) return;
+
+  try {
+    const WH_MOUSE_LL = 14;
+    const WM_LBUTTONDOWN = 0x0201;
+    const WM_LBUTTONUP = 0x0202;
+    const WM_RBUTTONDOWN = 0x0204;
+    const WM_MBUTTONDOWN = 0x0207;
+    const WM_MOUSEWHEEL = 0x020A;
+
+    globalMouseHookCallback = user32._koffi.register((nCode: number, wParam: any, lParam: any) => {
+      if (nCode >= 0 && lParam) {
+        try {
+          const w = Number(wParam);
+          const x = lParam.pt.x;
+          const y = lParam.pt.y;
+
+          if (w === WM_MOUSEWHEEL) {
+            const rawDelta = Number(lParam.mouseData);
+            let wheelDelta = (rawDelta >> 16);
+            if (wheelDelta === 0 && rawDelta !== 0) {
+              wheelDelta = (rawDelta << 16) >> 16;
+            }
+            if (wheelDelta === 0) {
+              wheelDelta = -120; // Fallback to standard scroll tick down
+            }
+            onMouseEvent('wheel', x, y, wheelDelta);
+          } else if (w === WM_LBUTTONDOWN) {
+            onMouseEvent('lbuttondown', x, y);
+          } else if (w === WM_LBUTTONUP) {
+            onMouseEvent('lbuttonup', x, y);
+          } else if (w === WM_RBUTTONDOWN) {
+            onMouseEvent('rbuttondown', x, y);
+          } else if (w === WM_MBUTTONDOWN) {
+            onMouseEvent('mbuttondown', x, y);
+          }
+        } catch (e) {}
+      }
+      return user32.CallNextHookEx(globalMouseHook, nCode, wParam, lParam);
+    }, user32._koffi.pointer(user32._LowLevelMouseProc));
+
+    globalMouseHook = user32.SetWindowsHookExW(WH_MOUSE_LL, globalMouseHookCallback, 0, 0);
+    console.log('[WindowsOverlay] Global mouse input hook installed successfully!');
+  } catch (err) {
+    console.warn('[WindowsOverlay] Failed to install global mouse hook:', err);
+  }
+}
+
+export function uninstallGlobalMouseHook() {
+  if (globalMouseHook && user32 && user32.UnhookWindowsHookEx) {
+    try {
+      user32.UnhookWindowsHookEx(globalMouseHook);
+      globalMouseHook = null;
+      if (globalMouseHookCallback && user32._koffi) {
+        user32._koffi.unregister(globalMouseHookCallback);
+        globalMouseHookCallback = null;
+      }
+      console.log('[WindowsOverlay] Global mouse input hook uninstalled.');
+    } catch (e) {}
+  }
+}
+
+export function isMouseButtonDown(key: 'left' | 'middle' | 'right' = 'left'): boolean {
+  if (user32 && user32.GetAsyncKeyState) {
+    try {
+      const vKey = key === 'middle' ? 0x04 : key === 'right' ? 0x02 : 0x01;
+      const state = user32.GetAsyncKeyState(vKey);
+      return (state & 0x8000) !== 0;
+    } catch (e) {
+      return false;
+    }
+  }
+  return false;
 }
 
 export function getHwndNumber(win: BrowserWindow): any {
@@ -58,11 +160,25 @@ export interface WindowConfig {
   y?: number;
   width: number;
   height: number;
+  stealthX?: number;
+  stealthY?: number;
   alwaysOnTop: boolean;
   privacyMode: boolean;
   opacity: number;
   apiKey?: string;
+  openaiApiKey?: string;
+  aiProvider?: 'gemini' | 'openai';
   model?: string;
+  clickThrough?: boolean;
+  hotCornerEnabled?: boolean;
+  hotCornerZone?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+  hotCornerDwellMs?: number;
+  autoWatchEnabled?: boolean;
+  autoWatchIntervalSec?: number;
+  clipboardAutoSolve?: boolean;
+  pillTheme?: 'dark' | 'light' | 'slate' | 'glass';
+  pillOpacity?: number;
+  pillCustomColor?: string;
 }
 
 const CONFIG_FILE = path.join(app.getPath('userData'), 'overlay_config.json');
@@ -72,21 +188,54 @@ export function loadConfig(): WindowConfig {
     if (fs.existsSync(CONFIG_FILE)) {
       const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
       const parsed = JSON.parse(data);
-      if (parsed.width && parsed.width < 350) parsed.width = 440;
-      if (parsed.height && parsed.height < 450) parsed.height = 620;
-      return parsed;
+      if (parsed.width && parsed.width < 240) parsed.width = 380;
+      if (parsed.height && parsed.height < 280) parsed.height = 540;
+      return {
+        width: 400,
+        height: 580,
+        alwaysOnTop: true,
+        privacyMode: true,
+        opacity: 0.96,
+        apiKey: '',
+        openaiApiKey: '',
+        aiProvider: 'gemini',
+        model: 'gemini-2.5-flash',
+        clickThrough: true,
+        hotCornerEnabled: true,
+        hotCornerZone: 'top-right',
+        hotCornerDwellMs: 3000,
+        autoWatchEnabled: false,
+        autoWatchIntervalSec: 30,
+        clipboardAutoSolve: false,
+        pillTheme: 'dark',
+        pillOpacity: 0.92,
+        pillCustomColor: '#09090b',
+        ...parsed
+      };
     }
   } catch (err) {
     console.error('Error loading config:', err);
   }
   return {
-    width: 440,
-    height: 620,
+    width: 400,
+    height: 580,
     alwaysOnTop: true,
     privacyMode: true,
     opacity: 0.96,
     apiKey: '',
-    model: 'gemini-2.5-flash'
+    openaiApiKey: '',
+    aiProvider: 'gemini',
+    model: 'gemini-2.5-flash',
+    clickThrough: true,
+    hotCornerEnabled: true,
+    hotCornerZone: 'top-right',
+    hotCornerDwellMs: 3000,
+    autoWatchEnabled: false,
+    autoWatchIntervalSec: 30,
+    clipboardAutoSolve: false,
+    pillTheme: 'dark',
+    pillOpacity: 0.92,
+    pillCustomColor: '#09090b'
   };
 }
 
@@ -94,12 +243,58 @@ export function saveConfig(config: Partial<WindowConfig>) {
   try {
     const existing = loadConfig();
     const cleanConfig = { ...config };
-    if (cleanConfig.width && cleanConfig.width < 350) delete cleanConfig.width;
-    if (cleanConfig.height && cleanConfig.height < 450) delete cleanConfig.height;
+    if (cleanConfig.width && cleanConfig.width < 240) delete cleanConfig.width;
+    if (cleanConfig.height && cleanConfig.height < 280) delete cleanConfig.height;
     const updated = { ...existing, ...cleanConfig };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error saving config:', err);
+  }
+}
+
+/**
+ * Configure Click-Through / Mouse Pass-Through (WS_EX_TRANSPARENT)
+ * Ensures mouse hover & clicks pass completely through to the underlying application (Chrome/Exam).
+ */
+export function applyClickThrough(win: BrowserWindow, enable: boolean) {
+  if (!win || win.isDestroyed()) return;
+
+  try {
+    // Electron level ignore mouse events with forward: true for transparent pass-through
+    win.setIgnoreMouseEvents(enable, { forward: true });
+
+    // Windows Native OS level: set WS_EX_TRANSPARENT style on HWND
+    if (user32 && user32.GetWindowLongPtrW && user32.SetWindowLongPtrW) {
+      const hwndNum = getHwndNumber(win);
+      if (hwndNum) {
+        const currentEx = BigInt(user32.GetWindowLongPtrW(hwndNum, GWL_EXSTYLE));
+        const newEx = enable
+          ? currentEx | BigInt(WS_EX_TRANSPARENT)
+          : currentEx & ~BigInt(WS_EX_TRANSPARENT);
+
+        user32.SetWindowLongPtrW(hwndNum, GWL_EXSTYLE, newEx);
+
+        if (user32.EnumChildWindows && user32._EnumChildProc && user32._koffi) {
+          try {
+            const childCallback = user32._koffi.register((childHwnd: any) => {
+              try {
+                const childEx = BigInt(user32.GetWindowLongPtrW(childHwnd, GWL_EXSTYLE));
+                const newChildEx = enable
+                  ? childEx | BigInt(WS_EX_TRANSPARENT)
+                  : childEx & ~BigInt(WS_EX_TRANSPARENT);
+                user32.SetWindowLongPtrW(childHwnd, GWL_EXSTYLE, newChildEx);
+              } catch (e) {}
+              return true;
+            }, user32._koffi.pointer(user32._EnumChildProc));
+            user32.EnumChildWindows(hwndNum, childCallback, 0);
+            user32._koffi.unregister(childCallback);
+          } catch (e) {}
+        }
+      }
+    }
+    console.log(`[WindowsOverlay] applyClickThrough -> ${enable}`);
+  } catch (err) {
+    console.warn('[WindowsOverlay] Failed to apply click-through:', err);
   }
 }
 
@@ -139,10 +334,15 @@ export function startForegroundTracker(win: BrowserWindow) {
     }
   }, 100);
 
-  // Watchdog: reassert HWND_TOPMOST periodically so full-screen apps or Chrome never push Clovi back
+  // Watchdog: reassert HWND_TOPMOST periodically without calling Electron's setAlwaysOnTop to protect WS_EX_TRANSPARENT style
   setInterval(() => {
     if (win && !win.isDestroyed() && win.isVisible()) {
-      applyAlwaysOnTop(win, true);
+      if (user32 && user32.SetWindowPos) {
+        const hwndNum = getHwndNumber(win);
+        if (hwndNum) {
+          user32.SetWindowPos(hwndNum, HWND_TOPMOST, 0, 0, 0, 0, TOPMOST_FLAGS);
+        }
+      }
     }
   }, 1000);
 }
@@ -191,16 +391,21 @@ export function setCaptureExclusion(win: BrowserWindow, enable: boolean): { succ
         const res = user32.SetWindowDisplayAffinity(hwndNum, affinity);
 
         if (user32.EnumChildWindows && user32._EnumChildProc && user32._koffi) {
+          let childCallback: any = null;
           try {
-            const childCallback = user32._koffi.register((childHwnd: any) => {
+            childCallback = user32._koffi.register((childHwnd: any) => {
               try {
                 user32.SetWindowDisplayAffinity(childHwnd, affinity);
               } catch (e) {}
               return true;
             }, user32._koffi.pointer(user32._EnumChildProc));
             user32.EnumChildWindows(hwndNum, childCallback, 0);
-            user32._koffi.unregister(childCallback);
-          } catch (e) {}
+          } catch (e) {
+          } finally {
+            if (childCallback) {
+              try { user32._koffi.unregister(childCallback); } catch (e) {}
+            }
+          }
         }
 
         console.log(`[WindowsOverlay] SetWindowDisplayAffinity(0x${affinity.toString(16)}) -> result: ${res}`);
@@ -244,8 +449,9 @@ export function applyAlwaysOnTop(win: BrowserWindow, enable: boolean) {
         }
 
         if (user32.EnumChildWindows && user32._EnumChildProc && user32._koffi) {
+          let childCallback: any = null;
           try {
-            const childCallback = user32._koffi.register((childHwnd: any) => {
+            childCallback = user32._koffi.register((childHwnd: any) => {
               try {
                 user32.SetWindowPos(childHwnd, insertAfter, 0, 0, 0, 0, TOPMOST_FLAGS);
                 const childEx = BigInt(user32.GetWindowLongPtrW(childHwnd, GWL_EXSTYLE));
@@ -254,8 +460,12 @@ export function applyAlwaysOnTop(win: BrowserWindow, enable: boolean) {
               return true;
             }, user32._koffi.pointer(user32._EnumChildProc));
             user32.EnumChildWindows(hwndNum, childCallback, 0);
-            user32._koffi.unregister(childCallback);
-          } catch (e) {}
+          } catch (e) {
+          } finally {
+            if (childCallback) {
+              try { user32._koffi.unregister(childCallback); } catch (e) {}
+            }
+          }
         }
       }
     }
@@ -278,8 +488,9 @@ export function applyNoActivate(win: BrowserWindow) {
         user32.SetWindowLongPtrW(hwndNum, GWL_EXSTYLE, currentEx | BigInt(WS_EX_NOACTIVATE));
 
         if (user32.EnumChildWindows && user32._EnumChildProc && user32._koffi) {
+          let childCallback: any = null;
           try {
-            const childCallback = user32._koffi.register((childHwnd: any) => {
+            childCallback = user32._koffi.register((childHwnd: any) => {
               try {
                 const childEx = BigInt(user32.GetWindowLongPtrW(childHwnd, GWL_EXSTYLE));
                 user32.SetWindowLongPtrW(childHwnd, GWL_EXSTYLE, childEx | BigInt(WS_EX_NOACTIVATE));
@@ -287,8 +498,12 @@ export function applyNoActivate(win: BrowserWindow) {
               return true;
             }, user32._koffi.pointer(user32._EnumChildProc));
             user32.EnumChildWindows(hwndNum, childCallback, 0);
-            user32._koffi.unregister(childCallback);
-          } catch (e) {}
+          } catch (e) {
+          } finally {
+            if (childCallback) {
+              try { user32._koffi.unregister(childCallback); } catch (e) {}
+            }
+          }
         }
       }
     } catch (e) {

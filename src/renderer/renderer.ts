@@ -48,6 +48,8 @@ const stealthDragHandle = document.getElementById('stealthDragHandle') as HTMLEl
 const btnStealthSolve = document.getElementById('btnStealthSolve') as HTMLButtonElement;
 const stealthSolveIcon = document.getElementById('stealthSolveIcon') as HTMLElement;
 const stealthSolveSpinner = document.getElementById('stealthSolveSpinner') as HTMLElement;
+const btnStealthClickThrough = document.getElementById('btnStealthClickThrough') as HTMLButtonElement;
+const stealthClickThroughIcon = document.getElementById('stealthClickThroughIcon') as HTMLElement;
 const btnStealthSnap = document.getElementById('btnStealthSnap') as HTMLButtonElement;
 const stealthSnapBadge = document.getElementById('stealthSnapBadge') as HTMLElement;
 const btnStealthPrompt = document.getElementById('btnStealthPrompt') as HTMLButtonElement;
@@ -57,6 +59,15 @@ const stealthInputText = document.getElementById('stealthInputText') as HTMLText
 const btnStealthSend = document.getElementById('btnStealthSend') as HTMLButtonElement;
 const stealthResponseBubble = document.getElementById('stealthResponseBubble') as HTMLElement;
 const stealthResponseContent = document.getElementById('stealthResponseContent') as HTMLElement;
+const btnStealthScrollUp = document.getElementById('btnStealthScrollUp') as HTMLButtonElement;
+const btnStealthScrollDown = document.getElementById('btnStealthScrollDown') as HTMLButtonElement;
+
+// Quick Toolbar & Toast DOM Elements
+const btnClickThroughToolbar = document.getElementById('btnClickThroughToolbar') as HTMLButtonElement;
+const btnClickThroughText = document.getElementById('btnClickThroughText') as HTMLElement;
+const handsFreeToast = document.getElementById('handsFreeToast') as HTMLElement;
+const handsFreeToastText = document.getElementById('handsFreeToastText') as HTMLElement;
+const toastIcon = document.getElementById('toastIcon') as HTMLElement;
 
 // Window Controls
 const btnDocs = document.getElementById('btnDocs') as HTMLButtonElement;
@@ -69,12 +80,79 @@ const settingsModal = document.getElementById('settingsModal') as HTMLElement;
 const modalBackdrop = document.getElementById('modalBackdrop') as HTMLElement;
 const btnCloseSettings = document.getElementById('btnCloseSettings') as HTMLButtonElement;
 const btnSaveSettings = document.getElementById('btnSaveSettings') as HTMLButtonElement;
+const selectAiProvider = document.getElementById('selectAiProvider') as HTMLSelectElement;
+const groupGeminiKey = document.getElementById('groupGeminiKey') as HTMLElement;
+const groupOpenaiKey = document.getElementById('groupOpenaiKey') as HTMLElement;
 const inputApiKey = document.getElementById('inputApiKey') as HTMLInputElement;
+const inputOpenaiApiKey = document.getElementById('inputOpenaiApiKey') as HTMLInputElement;
 const selectModel = document.getElementById('selectModel') as HTMLSelectElement;
 const rangeOpacity = document.getElementById('rangeOpacity') as HTMLInputElement;
 const opacityVal = document.getElementById('opacityVal') as HTMLElement;
 const chkAlwaysOnTop = document.getElementById('chkAlwaysOnTop') as HTMLInputElement;
 const chkPrivacyMode = document.getElementById('chkPrivacyMode') as HTMLInputElement;
+
+function updateAiModelOptions(provider: 'gemini' | 'openai' = 'gemini', selectedModel?: string) {
+  if (groupGeminiKey && groupOpenaiKey) {
+    if (provider === 'openai') {
+      groupGeminiKey.style.display = 'none';
+      groupOpenaiKey.style.display = 'flex';
+    } else {
+      groupGeminiKey.style.display = 'flex';
+      groupOpenaiKey.style.display = 'none';
+    }
+  }
+
+  if (selectModel) {
+    selectModel.innerHTML = '';
+    if (provider === 'openai') {
+      const models = [
+        { value: 'gpt-4o', label: 'GPT-4o (Flagship Omni Multimodal Vision)' },
+        { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Ultra Fast & Cost-Efficient)' },
+        { value: 'o3-mini', label: 'o3-mini (Advanced STEM & Coding Reasoning)' },
+        { value: 'o1', label: 'o1 (Deep Scientific & Logic Reasoning)' },
+        { value: 'gpt-4-turbo', label: 'GPT-4 Turbo (Vision & Code)' }
+      ];
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.value;
+        opt.innerText = m.label;
+        if (selectedModel && selectedModel === m.value) opt.selected = true;
+        selectModel.appendChild(opt);
+      });
+    } else {
+      const models = [
+        { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Ultra Fast & Multimodal)' },
+        { value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash (High Performance)' },
+        { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Advanced Reasoning)' },
+        { value: 'gemini-flash-latest', label: 'Gemini Flash Latest' }
+      ];
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.value;
+        opt.innerText = m.label;
+        if (selectedModel && selectedModel === m.value) opt.selected = true;
+        selectModel.appendChild(opt);
+      });
+    }
+  }
+}
+
+// Theme Customization Elements
+const selectPillTheme = document.getElementById('selectPillTheme') as HTMLSelectElement;
+const rangePillOpacity = document.getElementById('rangePillOpacity') as HTMLInputElement;
+const pillOpacityVal = document.getElementById('pillOpacityVal') as HTMLElement;
+const inputCustomPillColor = document.getElementById('inputCustomPillColor') as HTMLInputElement;
+
+// Hands-Free Settings DOM Elements
+const chkClickThrough = document.getElementById('chkClickThrough') as HTMLInputElement;
+const chkHotCorner = document.getElementById('chkHotCorner') as HTMLInputElement;
+const selectHotCornerZone = document.getElementById('selectHotCornerZone') as HTMLSelectElement;
+const selectHotCornerDwell = document.getElementById('selectHotCornerDwell') as HTMLSelectElement;
+const hotCornerControls = document.getElementById('hotCornerControls') as HTMLElement;
+const chkAutoWatch = document.getElementById('chkAutoWatch') as HTMLInputElement;
+const selectAutoWatchInterval = document.getElementById('selectAutoWatchInterval') as HTMLSelectElement;
+const autoWatchControls = document.getElementById('autoWatchControls') as HTMLElement;
+const chkClipboardSolve = document.getElementById('chkClipboardSolve') as HTMLInputElement;
 
 // Docs Modal
 const docsModal = document.getElementById('docsModal') as HTMLElement;
@@ -90,8 +168,95 @@ let currentStreamingBubble: HTMLElement | null = null;
 let currentStreamingText = '';
 let isGenerating = false;
 let isGhostMode = true;
+let isClickThrough = false;
+let toastTimeout: any = null;
+
+let currentPillTheme: 'dark' | 'light' | 'slate' | 'glass' = 'dark';
+let currentPillOpacity = 0.92;
+let currentPillColor = '#09090b';
+
+function hexToRgba(hex: string, alpha: number): string {
+  let c = hex.replace('#', '');
+  if (c.length === 3) c = c.split('').map(x => x + x).join('');
+  const num = parseInt(c, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function applyPillAppearance(theme: 'dark' | 'light' | 'slate' | 'glass' = 'dark', opacity = 0.92, customColor?: string) {
+  currentPillTheme = theme;
+  currentPillOpacity = opacity;
+  if (customColor) currentPillColor = customColor;
+
+  document.body.classList.remove('theme-dark', 'theme-light', 'theme-slate', 'theme-glass');
+  document.body.classList.add(`theme-${theme}`);
+
+  document.documentElement.style.setProperty('--pill-opacity', String(opacity));
+
+  if (customColor && theme !== 'glass') {
+    const rgba = hexToRgba(customColor, opacity);
+    document.documentElement.style.setProperty('--pill-bg', rgba);
+    document.documentElement.style.setProperty('--pill-bubble-bg', rgba);
+  } else {
+    document.documentElement.style.removeProperty('--pill-bg');
+    document.documentElement.style.removeProperty('--pill-bubble-bg');
+  }
+
+  if (selectPillTheme) selectPillTheme.value = theme;
+  if (rangePillOpacity) rangePillOpacity.value = String(Math.round(opacity * 100));
+  if (pillOpacityVal) pillOpacityVal.innerText = `${Math.round(opacity * 100)}%`;
+  if (inputCustomPillColor && customColor) inputCustomPillColor.value = customColor;
+
+  // Highlight active color preset button if matching
+  document.querySelectorAll('.color-preset-btn').forEach(btn => {
+    const btnColor = btn.getAttribute('data-color');
+    if (btnColor && customColor && btnColor.toLowerCase() === customColor.toLowerCase()) {
+      btn.classList.add('active-color');
+    } else {
+      btn.classList.remove('active-color');
+    }
+  });
+}
 
 const DEFAULT_SOLVE_PROMPT = 'Provide the direct written answer or code solution to the problem in the screenshot. If it is a coding question, output clean runnable code (prefer Python unless C/C++/Java specified in the problem). If math or MCQ, output the exact answer value directly.';
+
+// Show gentle floating toast notification
+function showToast(message: string, icon = '🎯', durationMs = 2800) {
+  if (!handsFreeToast || !handsFreeToastText) return;
+  if (toastIcon) toastIcon.innerText = icon;
+  handsFreeToastText.innerText = message;
+  handsFreeToast.style.display = 'flex';
+  handsFreeToast.classList.add('toast-visible');
+
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    handsFreeToast.classList.remove('toast-visible');
+    setTimeout(() => {
+      handsFreeToast.style.display = 'none';
+    }, 200);
+  }, durationMs);
+}
+
+function updateClickThroughUI(enabled: boolean) {
+  isClickThrough = enabled;
+  if (chkClickThrough) chkClickThrough.checked = enabled;
+
+  if (btnStealthClickThrough) {
+    btnStealthClickThrough.classList.toggle('active-target', enabled);
+    btnStealthClickThrough.title = enabled
+      ? '🎯 Stealth Pass-Through Active (Hold Top-Left 2s or F6 to Drag/Click)'
+      : '🎯 Toggle Stealth Pass-Through (Hold Top-Left 2s or F6)';
+  }
+
+  if (btnClickThroughToolbar) {
+    btnClickThroughToolbar.classList.toggle('active-target', enabled);
+    if (btnClickThroughText) {
+      btnClickThroughText.innerText = enabled ? 'Pass-Through (ON)' : 'Pass-Through';
+    }
+  }
+}
 
 // Initialize
 async function init() {
@@ -106,7 +271,10 @@ async function loadInitialConfig() {
     const config = await window.electronAPI.getConfig();
     if (config) {
       if (config.apiKey) inputApiKey.value = config.apiKey;
-      if (config.model) selectModel.value = config.model;
+      if (inputOpenaiApiKey && config.openaiApiKey) inputOpenaiApiKey.value = config.openaiApiKey;
+      if (selectAiProvider && config.aiProvider) selectAiProvider.value = config.aiProvider;
+      updateAiModelOptions((config.aiProvider as any) || 'gemini', config.model);
+
       if (config.opacity) {
         rangeOpacity.value = String(Math.round(config.opacity * 100));
         opacityVal.innerText = `${rangeOpacity.value}%`;
@@ -114,8 +282,31 @@ async function loadInitialConfig() {
       chkAlwaysOnTop.checked = !!config.alwaysOnTop;
       chkPrivacyMode.checked = !!config.privacyMode;
 
-      // If no API key configured yet, prompt user on first launch
-      if (!config.apiKey || !config.apiKey.trim()) {
+      // Hands-free configurations
+      isClickThrough = !!config.clickThrough;
+      updateClickThroughUI(isClickThrough);
+
+      if (chkHotCorner) chkHotCorner.checked = config.hotCornerEnabled !== false;
+      if (selectHotCornerZone && config.hotCornerZone) selectHotCornerZone.value = config.hotCornerZone;
+      if (selectHotCornerDwell && config.hotCornerDwellMs) selectHotCornerDwell.value = String(config.hotCornerDwellMs);
+      if (hotCornerControls) hotCornerControls.style.display = (config.hotCornerEnabled !== false) ? 'flex' : 'none';
+
+      if (chkAutoWatch) chkAutoWatch.checked = !!config.autoWatchEnabled;
+      if (selectAutoWatchInterval && config.autoWatchIntervalSec) selectAutoWatchInterval.value = String(config.autoWatchIntervalSec);
+      if (autoWatchControls) autoWatchControls.style.display = config.autoWatchEnabled ? 'block' : 'none';
+
+      if (chkClipboardSolve) chkClipboardSolve.checked = !!config.clipboardAutoSolve;
+
+      // Pill & Overlay Appearance Configuration
+      applyPillAppearance(
+        (config.pillTheme as any) || 'dark',
+        config.pillOpacity !== undefined ? config.pillOpacity : 0.92,
+        config.pillCustomColor || '#09090b'
+      );
+
+      // If no API key configured yet (neither Gemini nor OpenAI), prompt user on first launch
+      const hasKey = (config.apiKey && config.apiKey.trim()) || (config.openaiApiKey && config.openaiApiKey.trim());
+      if (!hasKey) {
         toggleGhostMode(false);
         if (settingsModal) settingsModal.style.display = 'flex';
       }
@@ -125,13 +316,37 @@ async function loadInitialConfig() {
   }
 }
 
+function openSettingsModal() {
+  if (!settingsModal) return;
+  window.electronAPI.setFocusable(true);
+  window.electronAPI.setClickThrough(false);
+  settingsModal.style.display = 'flex';
+  setTimeout(() => {
+    if (selectAiProvider && selectAiProvider.value === 'openai' && inputOpenaiApiKey) {
+      inputOpenaiApiKey.focus();
+    } else if (inputApiKey) {
+      inputApiKey.focus();
+    }
+  }, 80);
+}
+
+function closeSettingsModal() {
+  if (!settingsModal) return;
+  settingsModal.style.display = 'none';
+  window.electronAPI.setClickThrough(true);
+  window.electronAPI.setFocusable(false);
+  window.electronAPI.restoreFocus();
+}
+
 function setupEventListeners() {
   // Global non-activating click guard: only restore focus when clicking non-interactive backdrop
   document.addEventListener('pointerdown', (e: MouseEvent) => {
-    if (e.target instanceof Element && e.target.closest('button, input, select, textarea, .ghost-bubble, .modal-card, .chip, .code-container, .suggested-chips, .stealth-dock, .stealth-input-bar, .stealth-response-bubble')) {
+    if (e.target instanceof Element && e.target.closest('button, input, select, textarea, .ghost-bubble, .modal-card, .modal-body, .form-group, .chip, .code-container, .suggested-chips, .stealth-dock, .stealth-input-bar, .stealth-response-bubble')) {
       return;
     }
-    window.electronAPI.restoreFocus();
+    if (settingsModal.style.display !== 'flex' && docsModal.style.display !== 'flex') {
+      window.electronAPI.restoreFocus();
+    }
   });
 
   // Input auto-resize
@@ -153,6 +368,40 @@ function setupEventListeners() {
   }
 
   // Stealth Dock Buttons
+  if (btnStealthClickThrough) {
+    btnStealthClickThrough.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const next = await window.electronAPI.toggleClickThrough();
+      updateClickThroughUI(next);
+      showToast(next ? '🎯 Mouse Pass-Through Active (Zero Hover Alert)' : '⚡ Interactive Mode Active');
+    });
+  }
+
+  if (btnClickThroughToolbar) {
+    btnClickThroughToolbar.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const next = await window.electronAPI.toggleClickThrough();
+      updateClickThroughUI(next);
+      showToast(next ? '🎯 Mouse Pass-Through Active (Zero Hover Alert)' : '⚡ Interactive Mode Active');
+    });
+  }
+
+  if (chkHotCorner) {
+    chkHotCorner.addEventListener('change', () => {
+      if (hotCornerControls) {
+        hotCornerControls.style.display = chkHotCorner.checked ? 'flex' : 'none';
+      }
+    });
+  }
+
+  if (chkAutoWatch) {
+    chkAutoWatch.addEventListener('change', () => {
+      if (autoWatchControls) {
+        autoWatchControls.style.display = chkAutoWatch.checked ? 'block' : 'none';
+      }
+    });
+  }
+
   if (btnStealthSolve) {
     btnStealthSolve.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -280,6 +529,24 @@ function setupEventListeners() {
       stealthResponseBubble.style.display = 'none';
       adjustStealthBounds();
       window.electronAPI.restoreFocus();
+    });
+  }
+
+  // Scroll Up/Down Micro-buttons on Solution Bubble
+  if (btnStealthScrollUp) {
+    btnStealthScrollUp.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (stealthResponseContent) {
+        stealthResponseContent.scrollTop -= 80;
+      }
+    });
+  }
+  if (btnStealthScrollDown) {
+    btnStealthScrollDown.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (stealthResponseContent) {
+        stealthResponseContent.scrollTop += 80;
+      }
     });
   }
 
@@ -484,13 +751,13 @@ function setupEventListeners() {
 
   // Settings Modal Controls
   btnSettings.addEventListener('click', () => {
-    settingsModal.style.display = 'flex';
+    openSettingsModal();
   });
   btnCloseSettings.addEventListener('click', () => {
-    settingsModal.style.display = 'none';
+    closeSettingsModal();
   });
   modalBackdrop.addEventListener('click', () => {
-    settingsModal.style.display = 'none';
+    closeSettingsModal();
   });
 
   // Opacity Slider live update
@@ -500,21 +767,143 @@ function setupEventListeners() {
     window.electronAPI.setOpacity(val / 100);
   });
 
+  // Appearance & Pill Customization Inputs
+  if (selectPillTheme) {
+    selectPillTheme.addEventListener('change', () => {
+      applyPillAppearance(selectPillTheme.value as any, currentPillOpacity, currentPillColor);
+    });
+  }
+
+  if (rangePillOpacity) {
+    rangePillOpacity.addEventListener('input', () => {
+      const op = Number(rangePillOpacity.value) / 100;
+      if (pillOpacityVal) pillOpacityVal.innerText = `${rangePillOpacity.value}%`;
+      applyPillAppearance(currentPillTheme, op, currentPillColor);
+    });
+  }
+
+  document.querySelectorAll('.color-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const col = btn.getAttribute('data-color') || '#09090b';
+      applyPillAppearance(currentPillTheme, currentPillOpacity, col);
+    });
+  });
+
+  if (inputCustomPillColor) {
+    inputCustomPillColor.addEventListener('input', () => {
+      applyPillAppearance(currentPillTheme, currentPillOpacity, inputCustomPillColor.value);
+    });
+  }
+
+  // AI Intelligence Provider Selector
+  if (selectAiProvider) {
+    selectAiProvider.addEventListener('change', () => {
+      updateAiModelOptions(selectAiProvider.value as any);
+    });
+  }
+
   // Save Settings
   btnSaveSettings.addEventListener('click', async () => {
     const updated = {
+      aiProvider: selectAiProvider ? selectAiProvider.value : 'gemini',
       apiKey: inputApiKey.value.trim(),
+      openaiApiKey: inputOpenaiApiKey ? inputOpenaiApiKey.value.trim() : '',
       model: selectModel.value,
       opacity: Number(rangeOpacity.value) / 100,
       alwaysOnTop: chkAlwaysOnTop.checked,
-      privacyMode: chkPrivacyMode.checked
+      privacyMode: chkPrivacyMode.checked,
+      clickThrough: chkClickThrough ? chkClickThrough.checked : false,
+      hotCornerEnabled: chkHotCorner ? chkHotCorner.checked : true,
+      hotCornerZone: selectHotCornerZone ? selectHotCornerZone.value : 'top-right',
+      hotCornerDwellMs: selectHotCornerDwell ? Number(selectHotCornerDwell.value) : 3000,
+      autoWatchEnabled: chkAutoWatch ? chkAutoWatch.checked : false,
+      autoWatchIntervalSec: selectAutoWatchInterval ? Number(selectAutoWatchInterval.value) : 30,
+      clipboardAutoSolve: chkClipboardSolve ? chkClipboardSolve.checked : false,
+      pillTheme: selectPillTheme ? (selectPillTheme.value as any) : currentPillTheme,
+      pillOpacity: rangePillOpacity ? Number(rangePillOpacity.value) / 100 : currentPillOpacity,
+      pillCustomColor: currentPillColor
     };
     await window.electronAPI.updateConfig(updated);
-    settingsModal.style.display = 'none';
+    updateClickThroughUI(updated.clickThrough);
+    closeSettingsModal();
+    showToast('⚙️ Settings saved successfully', '✅', 2000);
   });
 }
 
 function setupIpcListeners() {
+  // Click-Through toggle from main process / hotkey (F6) / Top-Left corner dwell
+  window.electronAPI.onClickThroughToggled((enabled: boolean) => {
+    updateClickThroughUI(enabled);
+    showToast(
+      enabled
+        ? '🎯 Stealth Pass-Through Locked (0 Hover Alerts). Hold Top-Left (2s) or F6 to Unlock.'
+        : '🔓 Interactive Drag Mode Active. You can now drag, reposition, and click Clovi.',
+      enabled ? '🎯' : '🔓',
+      3500
+    );
+  });
+
+  // Hot Corner Hold Triggered Event
+  window.electronAPI.onHotCornerTriggered(() => {
+    showToast('⚡ Hot Corner Hold Triggered: Solving...', '⚡', 2500);
+  });
+
+  // Transparent Mode Virtual Mouse Scroll (0 Hover Detection)
+  window.electronAPI.onScrollWheel(({ deltaY }: { deltaY: number; x: number; y: number }) => {
+    if (stealthResponseContent && stealthResponseBubble && stealthResponseBubble.style.display !== 'none') {
+      stealthResponseContent.scrollTop += deltaY;
+    } else if (chatContainer) {
+      chatContainer.scrollTop += deltaY;
+    }
+  });
+
+  // Real-time Drag-to-Scroll (Middle Mouse Button / Right-Click Drag)
+  window.electronAPI.onDragScroll(({ deltaY }: { deltaY: number }) => {
+    if (stealthResponseContent && stealthResponseBubble && stealthResponseBubble.style.display !== 'none') {
+      stealthResponseContent.scrollTop += deltaY;
+    } else if (chatContainer) {
+      chatContainer.scrollTop += deltaY;
+    }
+  });
+
+  // Transparent Mode Virtual Click Dispatcher (Allows clicking all buttons without mouse exit alerts)
+  window.electronAPI.onVirtualClick(({ x, y }: { x: number; y: number }) => {
+    if (!isClickThrough) return;
+
+    // Search all layered elements at coordinates
+    const elements = document.elementsFromPoint(x, y);
+    if (!elements || elements.length === 0) return;
+
+    for (const el of elements) {
+      const clickable = el.closest('button, .clickable, input, select, textarea, a, .ghost-bubble, .chip, .stealth-chip-btn, .stealth-btn, .icon-btn, .toolbar-btn, .btn-copy-msg, .stealth-copy-btn, .btn-close-stealth');
+      if (clickable instanceof HTMLElement) {
+        clickable.click();
+        return;
+      }
+    }
+  });
+
+  // Transparent Mode Virtual Middle-Click Quick Copy
+  window.electronAPI.onVirtualMiddleClick(() => {
+    if (currentStreamingText && currentStreamingText.trim()) {
+      navigator.clipboard.writeText(currentStreamingText.trim());
+      showToast('📋 Solution Copied to Clipboard!', '📋', 2000);
+    }
+  });
+
+  // Main process direct button event listeners
+  window.electronAPI.onOpenSettings(() => {
+    openSettingsModal();
+  });
+
+  window.electronAPI.onOpenDocs(() => {
+    if (docsModal) docsModal.style.display = 'flex';
+  });
+
+  window.electronAPI.onToggleStealthPrompt(() => {
+    toggleStealthInputBar();
+  });
+
   // Streaming chunks
   window.electronAPI.onStreamChunk((chunk: string) => {
     currentStreamingText += chunk;
@@ -528,15 +917,21 @@ function setupIpcListeners() {
         adjustStealthBounds();
       }
       if (stealthResponseContent) {
-        renderMarkdownInto(stealthResponseContent, currentStreamingText, true);
-        stealthResponseContent.scrollTop = stealthResponseContent.scrollHeight;
+        const isNearBottom = stealthResponseContent.scrollHeight - stealthResponseContent.scrollTop - stealthResponseContent.clientHeight < 60;
+        renderMarkdownInto(stealthResponseContent, currentStreamingText, true, true);
+        if (isNearBottom) {
+          stealthResponseContent.scrollTop = stealthResponseContent.scrollHeight;
+        }
       }
     }
 
     // 2. Always update the main window chat bubble in parallel
     if (currentStreamingBubble) {
-      renderMarkdownInto(currentStreamingBubble, currentStreamingText, true);
-      scrollToBottom();
+      const isNearBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 60;
+      renderMarkdownInto(currentStreamingBubble, currentStreamingText, true, false);
+      if (isNearBottom) {
+        scrollToBottom();
+      }
     }
   });
 
@@ -551,7 +946,7 @@ function setupIpcListeners() {
         adjustStealthBounds();
       }
       if (stealthResponseContent) {
-        renderMarkdownInto(stealthResponseContent, fullText, false);
+        renderMarkdownInto(stealthResponseContent, fullText, false, true);
         stealthResponseContent.scrollTop = 0; // Scroll to top so user can read solution from start
       }
     }
@@ -1045,22 +1440,44 @@ function scrollToBottom() {
   chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-// Markdown parser & Renderer
-function renderMarkdownInto(container: HTMLElement, rawMarkdown: string, isStreaming: boolean) {
-  let html = rawMarkdown;
+// Markdown parser & Renderer with real-time partial fence parsing and LaTeX math formatting
+function renderMarkdownInto(container: HTMLElement, rawMarkdown: string, isStreaming: boolean, isStealthMicro: boolean = false) {
+  let text = rawMarkdown;
 
-  // Code blocks ```lang\ncode\n```
-  html = html.replace(/```([a-zA-Z0-9_\-\+]*)\n([\s\S]*?)```/g, (_match, lang, code) => {
-    const cleanLang = lang || 'code';
-    const escapedCode = escapeHtml(code.trim());
-    return `<div class="code-container">
-      <div class="code-header">
-        <span>${escapeHtml(cleanLang)}</span>
-        <button class="btn-copy-code" onclick="copyCodeSnippet(this)">📋 Copy</button>
-      </div>
-      <pre><code>${escapedCode}</code></pre>
-    </div>`;
-  });
+  // If streaming and there is an unclosed code block, auto-close for clean rendering
+  if (isStreaming) {
+    const fenceCount = (text.match(/```/g) || []).length;
+    if (fenceCount % 2 !== 0) {
+      text += '\n```';
+    }
+  }
+
+  let html = text;
+
+  // Format LaTeX Math blocks and inline expressions
+  html = html.replace(/\\\[([\s\S]*?)\\\]/g, (_m, math) => `<div class="math-block">${formatMathSymbols(math.trim())}</div>`);
+  html = html.replace(/\\\(([\s\S]*?)\\\)/g, (_m, math) => `<span class="math-inline">${formatMathSymbols(math.trim())}</span>`);
+
+  if (isStealthMicro) {
+    // In stealth capsule popup, render clean scrollable plain text with clean monospace styling so large outputs remain ultra-readable
+    html = html.replace(/```[a-zA-Z0-9_\-\+]*\n([\s\S]*?)```/g, (_match, code) => {
+      const escapedCode = escapeHtml(code.trim());
+      return `<pre class="stealth-plain-code"><code>${escapedCode}</code></pre>`;
+    });
+  } else {
+    // Standard full window code block
+    html = html.replace(/```([a-zA-Z0-9_\-\+]*)\n([\s\S]*?)```/g, (_match, lang, code) => {
+      const cleanLang = lang || 'code';
+      const escapedCode = escapeHtml(code.trim());
+      return `<div class="code-container">
+        <div class="code-header">
+          <span>${escapeHtml(cleanLang)}</span>
+          <button class="btn-copy-code" onclick="copyCodeSnippet(this)">📋 Copy</button>
+        </div>
+        <pre><code>${escapedCode}</code></pre>
+      </div>`;
+    });
+  }
 
   // Inline code `code`
   html = html.replace(/`([^`]+)`/g, (_match, code) => {
@@ -1085,6 +1502,25 @@ function renderMarkdownInto(container: HTMLElement, rawMarkdown: string, isStrea
   }
 
   container.innerHTML = html;
+}
+
+function formatMathSymbols(math: string): string {
+  return escapeHtml(math)
+    .replace(/\\times/g, '×')
+    .replace(/\\cdot/g, '·')
+    .replace(/\\le(q)?/g, '≤')
+    .replace(/\\ge(q)?/g, '≥')
+    .replace(/\\neq/g, '≠')
+    .replace(/\\approx/g, '≈')
+    .replace(/\\pm/g, '±')
+    .replace(/\\infty/g, '∞')
+    .replace(/\\pi/g, 'π')
+    .replace(/\\theta/g, 'θ')
+    .replace(/\\alpha/g, 'α')
+    .replace(/\\beta/g, 'β')
+    .replace(/\\gamma/g, 'γ')
+    .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1 / $2)');
 }
 
 function escapeHtml(str: string): string {
