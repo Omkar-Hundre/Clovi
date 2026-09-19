@@ -220,7 +220,7 @@ function applyPillAppearance(theme: 'dark' | 'light' | 'slate' | 'glass' = 'dark
   });
 }
 
-const DEFAULT_SOLVE_PROMPT = 'Provide the direct written answer or code solution to the problem in the screenshot. If it is a coding question, output clean runnable code (prefer Python unless C/C++/Java specified in the problem). If math or MCQ, output the exact answer value directly.';
+const DEFAULT_SOLVE_PROMPT = 'Provide the direct written answer or code solution to the problem in the screenshot. If it is a coding question, output clean, runnable, 100% correct code in C programming language (simple standard C style, passing all visible and hidden test cases). If math or MCQ, output the exact answer value directly.';
 
 // Show gentle floating toast notification
 function showToast(message: string, icon = '🎯', durationMs = 2800) {

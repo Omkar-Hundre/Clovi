@@ -631,10 +631,10 @@ function registerGlobalShortcuts() {
   registerSolveMacro('CommandOrControl+Shift+1', MCQ_PROMPT);
   registerSolveMacro('Alt+1', MCQ_PROMPT);
 
-  // Macro 2: Python 3 Code Solution (Ctrl + Shift + 2 & Alt + 2)
-  const PY_PROMPT = 'Provide the optimal Python 3 code solution with clean time and space complexity analysis (prefer O(1) or O(N)). Make it clean, runnable, and robust against all edge cases.';
-  registerSolveMacro('CommandOrControl+Shift+2', PY_PROMPT);
-  registerSolveMacro('Alt+2', PY_PROMPT);
+  // Macro 2: C Language Solution (Ctrl + Shift + 2 & Alt + 2)
+  const C_PROMPT = 'Provide the clean, optimal, and 100% correct C language solution to the problem in the screenshot. Use simple standard C (standard headers <stdio.h>, <stdlib.h>, <string.h>), junior developer style, handling all visible and hidden edge test cases.';
+  registerSolveMacro('CommandOrControl+Shift+2', C_PROMPT);
+  registerSolveMacro('Alt+2', C_PROMPT);
 
   // Macro 3: Java & C++ Solution (Ctrl + Shift + 3 & Alt + 3)
   const CPP_PROMPT = 'Provide the optimal, production-ready C++ and Java solution to the problem in the screenshot with time and space complexity.';
