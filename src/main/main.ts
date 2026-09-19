@@ -44,6 +44,9 @@ let hotCornerToggleTriggered = false;
 let hotCornerHideDwellStart: number | null = null;
 let hotCornerHideTriggered = false;
 
+let hotCornerMultiSnapDwellStart: number | null = null;
+let hotCornerMultiSnapTriggered = false;
+
 let autoWatchInterval: NodeJS.Timeout | null = null;
 let clipboardWatcherInterval: NodeJS.Timeout | null = null;
 let lastObservedClipboard = '';
@@ -83,15 +86,7 @@ async function executeSolve(directivePrompt?: string) {
       if (currentConfig.clickThrough) applyClickThrough(mainWindow, true);
     }
 
-    let finalPrompt = directivePrompt;
-    if (!finalPrompt) {
-      try {
-        const clipText = clipboard.readText().trim();
-        if (clipText && clipText.length > 0 && clipText.length < 3000) {
-          finalPrompt = `Solve the problem in the screenshot.\nAdditional instruction/context from user clipboard: "${clipText}"`;
-        }
-      } catch (e) {}
-    }
+    const finalPrompt = directivePrompt || undefined;
 
     mainWindow.webContents.send('overlay:global-solve', {
       screenshot,
@@ -122,20 +117,20 @@ function startHandsFreeServices() {
         const PADDING = 60; // 60px safe corner zone inside viewport
         const isVisible = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
 
-        // A. Top-Right Corner (Hold 3s):
-        //    - If Hidden: REAPPEAR in exact previous state (preserving answers and UI format)
-        //    - If Visible: Trigger Snap & Solve
+        // A. Top-Right Corner (Hold 1.5s):
+        //    - If Hidden: REAPPEAR in exact previous state (Hold 2s)
+        //    - If Visible: Trigger Snap & Solve (Hold 1.5s)
         const inTopRight = cursor.x >= bounds.x + bounds.width - PADDING && cursor.y <= bounds.y + PADDING;
         if (inTopRight) {
           const now = Date.now();
-          const dwellRequired = currentConfig.hotCornerDwellMs || 3000;
+          const dwellRequired = !isVisible ? 2000 : (currentConfig.hotCornerDwellMs || 1500);
           if (hotCornerSolveDwellStart === null) {
             hotCornerSolveDwellStart = now;
           } else if (!hotCornerSolveTriggered && now - hotCornerSolveDwellStart >= dwellRequired) {
             hotCornerSolveTriggered = true;
             if (mainWindow && !mainWindow.isDestroyed()) {
               if (!mainWindow.isVisible()) {
-                console.log('[HotCorner] Top-Right 3s dwell -> Reappearing Clovi in exact state');
+                console.log('[HotCorner] Top-Right 2s dwell -> Reappearing Clovi in exact state');
                 mainWindow.showInactive();
                 applyAlwaysOnTop(mainWindow, true);
                 applyNoActivate(mainWindow);
@@ -154,23 +149,24 @@ function startHandsFreeServices() {
         }
 
         // B. Bottom-Right Corner:
-        //    - If Visible: Hold 1s -> HIDE Clovi instantly!
-        //    - If Hidden: Hold 3s -> REAPPEAR Clovi in exact previous state!
+        //    - If Visible: Instant Hide as soon as cursor hovers (0ms)
+        //    - If Hidden: Hold 2s -> REAPPEAR Clovi in exact previous state!
         const inBottomRight = cursor.x >= bounds.x + bounds.width - PADDING && cursor.y >= bounds.y + bounds.height - PADDING;
         if (inBottomRight) {
           const now = Date.now();
-          const dwellReq = isVisible ? 1000 : 3000;
+          const dwellReq = isVisible ? 0 : 2000;
           if (hotCornerHideDwellStart === null) {
             hotCornerHideDwellStart = now;
-          } else if (!hotCornerHideTriggered && now - hotCornerHideDwellStart >= dwellReq) {
+          }
+          if (!hotCornerHideTriggered && (dwellReq === 0 || now - hotCornerHideDwellStart >= dwellReq)) {
             hotCornerHideTriggered = true;
             if (mainWindow && !mainWindow.isDestroyed()) {
               if (isVisible) {
-                console.log('[HotCorner] Bottom-Right 1s dwell -> Hiding Clovi overlay');
+                console.log('[HotCorner] Bottom-Right instant hover -> Hiding Clovi overlay');
                 mainWindow.hide();
                 restoreForegroundWindow();
               } else {
-                console.log('[HotCorner] Bottom-Right 3s dwell -> Reappearing Clovi in exact state');
+                console.log('[HotCorner] Bottom-Right 2s dwell -> Reappearing Clovi in exact state');
                 mainWindow.showInactive();
                 applyAlwaysOnTop(mainWindow, true);
                 applyNoActivate(mainWindow);
@@ -198,6 +194,38 @@ function startHandsFreeServices() {
         } else {
           hotCornerToggleDwellStart = null;
           hotCornerToggleTriggered = false;
+        }
+
+        // D. Bottom-Left Corner (Hold 1.5s): Attach Multi-Screenshot & start 10s Timer
+        const inBottomLeft = cursor.x <= bounds.x + PADDING && cursor.y >= bounds.y + bounds.height - PADDING;
+        if (inBottomLeft) {
+          const now = Date.now();
+          if (hotCornerMultiSnapDwellStart === null) {
+            hotCornerMultiSnapDwellStart = now;
+          } else if (!hotCornerMultiSnapTriggered && now - hotCornerMultiSnapDwellStart >= 1500) {
+            hotCornerMultiSnapTriggered = true;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              console.log('[HotCorner] Bottom-Left 1.5s dwell -> Capturing multi-screenshot');
+              recordForegroundWindow();
+              takeCleanScreenshot().then((screenshot) => {
+                if (!mainWindow || mainWindow.isDestroyed()) return;
+                if (!mainWindow.isVisible()) {
+                  mainWindow.showInactive();
+                  applyAlwaysOnTop(mainWindow, true);
+                  applyNoActivate(mainWindow);
+                  if (currentConfig.privacyMode) setCaptureExclusion(mainWindow, true);
+                  if (currentConfig.clickThrough) applyClickThrough(mainWindow, true);
+                }
+                mainWindow.webContents.send('overlay:hot-corner-multi-snap', screenshot);
+                restoreForegroundWindow();
+              }).catch(err => {
+                console.error('[HotCorner] Bottom-Left capture failed:', err);
+              });
+            }
+          }
+        } else {
+          hotCornerMultiSnapDwellStart = null;
+          hotCornerMultiSnapTriggered = false;
         }
       } catch (err) {
         // Ignore cursor track errors
@@ -578,16 +606,7 @@ function registerGlobalShortcuts() {
             mainWindow.showInactive();
           }
 
-          let finalPrompt = directivePrompt;
-          // Auto-Clipboard Injection: If user copied text in Chrome, auto-merge it into prompt
-          if (!finalPrompt) {
-            try {
-              const clipText = clipboard.readText().trim();
-              if (clipText && clipText.length > 0 && clipText.length < 3000) {
-                finalPrompt = `Solve the problem in the screenshot.\nAdditional instruction/context from user clipboard: "${clipText}"`;
-              }
-            } catch (e) {}
-          }
+          const finalPrompt = directivePrompt || undefined;
 
           mainWindow.webContents.send('overlay:global-solve', {
             screenshot,

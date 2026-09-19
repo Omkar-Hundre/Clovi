@@ -76,6 +76,11 @@ const api = {
     ipcRenderer.on('overlay:hot-corner-triggered', handler);
     return () => ipcRenderer.removeListener('overlay:hot-corner-triggered', handler);
   },
+  onHotCornerMultiSnap: (callback: (screenshot: ScreenshotData) => void) => {
+    const handler = (_: any, screenshot: ScreenshotData) => callback(screenshot);
+    ipcRenderer.on('overlay:hot-corner-multi-snap', handler);
+    return () => ipcRenderer.removeListener('overlay:hot-corner-multi-snap', handler);
+  },
   onClickThroughToggled: (callback: (enabled: boolean) => void) => {
     const handler = (_: any, enabled: boolean) => callback(enabled);
     ipcRenderer.on('overlay:click-through-toggled', handler);

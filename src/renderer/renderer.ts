@@ -239,6 +239,21 @@ function showToast(message: string, icon = '🎯', durationMs = 2800) {
   }, durationMs);
 }
 
+let multiSnapTimer: NodeJS.Timeout | null = null;
+let multiSnapCountdown = 10;
+let multiSnapCountdownInterval: NodeJS.Timeout | null = null;
+
+function cancelMultiSnapTimer() {
+  if (multiSnapTimer) {
+    clearTimeout(multiSnapTimer);
+    multiSnapTimer = null;
+  }
+  if (multiSnapCountdownInterval) {
+    clearInterval(multiSnapCountdownInterval);
+    multiSnapCountdownInterval = null;
+  }
+}
+
 function updateClickThroughUI(enabled: boolean) {
   isClickThrough = enabled;
   if (chkClickThrough) chkClickThrough.checked = enabled;
@@ -843,9 +858,54 @@ function setupIpcListeners() {
     );
   });
 
-  // Hot Corner Hold Triggered Event
+  // Hot Corner Hold Triggered Event (Top-Right)
   window.electronAPI.onHotCornerTriggered(() => {
     showToast('⚡ Hot Corner Hold Triggered: Solving...', '⚡', 2500);
+  });
+
+  // Hot Corner Multi-Snap Event (Bottom-Left 1.5s Dwell + 10s Idle Timer)
+  window.electronAPI.onHotCornerMultiSnap((screenshot: any) => {
+    if (screenshot && screenshot.dataUrl) {
+      if (attachedImages.length >= MAX_ATTACHMENTS) {
+        showToast(`📸 Maximum ${MAX_ATTACHMENTS} screenshots reached!`, '⚠️', 2500);
+      } else {
+        addAttachment({
+          base64: screenshot.base64,
+          mimeType: screenshot.mimeType,
+          dataUrl: screenshot.dataUrl
+        });
+      }
+
+      // Reset and start the 10s idle countdown timer
+      cancelMultiSnapTimer();
+
+      multiSnapCountdown = 10;
+      showToast(`📸 Attached Screenshot #${attachedImages.length}! Auto-solving in ${multiSnapCountdown}s... (Hover bottom-left again to add more)`, '📸', 3500);
+
+      multiSnapCountdownInterval = setInterval(() => {
+        multiSnapCountdown--;
+        if (multiSnapCountdown <= 0) {
+          if (multiSnapCountdownInterval) {
+            clearInterval(multiSnapCountdownInterval);
+            multiSnapCountdownInterval = null;
+          }
+        }
+      }, 1000);
+
+      multiSnapTimer = setTimeout(async () => {
+        cancelMultiSnapTimer();
+        if (attachedImages.length > 0) {
+          showToast(`⚡ Solving with ${attachedImages.length} attached screenshot(s)...`, '⚡', 2500);
+          const promptToUse = DEFAULT_SOLVE_PROMPT;
+          if (isGhostMode) {
+            await sendStealthPrompt(promptToUse);
+          } else {
+            promptInput.value = promptToUse;
+            await handleSend();
+          }
+        }
+      }, 10000);
+    }
   });
 
   // Transparent Mode Virtual Mouse Scroll (0 Hover Detection)
@@ -1251,6 +1311,7 @@ function removeAttachment(index: number) {
 }
 
 function clearAllAttachments() {
+  cancelMultiSnapTimer();
   attachedImages = [];
   renderAttachments();
 }
